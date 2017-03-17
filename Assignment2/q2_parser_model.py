@@ -16,14 +16,15 @@ class Config(object):
     information parameters. Model objects are passed a Config() object at
     instantiation.
     """
-    n_features = 36
-    n_classes = 3
-    dropout = 0.5
-    embed_size = 50
-    hidden_size = 200
-    batch_size = 2048
-    n_epochs = 10
-    lr = 0.001
+    def __init__(self, n_features=36, n_classes=3):
+        self.n_features = n_features
+        self.n_classes = n_classes
+        self.dropout = 0.5
+        self.embed_size = 50
+        self.hidden_size = 200
+        self.batch_size = 2048
+        self.n_epochs = 10
+        self.lr = 0.001
 
 
 class ParserModel(Model):
@@ -209,24 +210,26 @@ class ParserModel(Model):
 
     def run_epoch(self, sess, parser, train_examples, dev_set):
         prog = Progbar(target=1 + len(train_examples) / self.config.batch_size)
-        for i, (train_x, train_y) in enumerate(minibatches(train_examples, self.config.batch_size)):
+        for i, (train_x, train_y) in enumerate(
+                minibatches(train_examples, self.config.batch_size, parser.n_trans)):
             loss = self.train_on_batch(sess, train_x, train_y)
             prog.update(i + 1, [("train loss", loss)])
 
-        print "Evaluating on dev set",
-        dev_UAS, _ = parser.parse(dev_set)
+        print "Evaluating on dev set"
+        dev_UAS, dev_LAS, _ = parser.parse(dev_set)
         print "- dev UAS: {:.2f}".format(dev_UAS * 100.0)
-        return dev_UAS
+        print "- dev LAS: {:.2f}".format(dev_LAS * 100.0)
+        return dev_UAS, dev_LAS
 
     def fit(self, sess, saver, parser, train_examples, dev_set):
-        best_dev_UAS = 0
+        best_dev_LAS = 0
         for epoch in range(self.config.n_epochs):
             print "Epoch {:} out of {:}".format(epoch + 1, self.config.n_epochs)
-            dev_UAS = self.run_epoch(sess, parser, train_examples, dev_set)
-            if dev_UAS > best_dev_UAS:
-                best_dev_UAS = dev_UAS
+            _, dev_LAS = self.run_epoch(sess, parser, train_examples, dev_set)
+            if dev_LAS > best_dev_LAS:
+                best_dev_LAS = dev_LAS
                 if saver:
-                    print "New best dev UAS! Saving model in ./data/weights/parser.weights"
+                    print "New best dev LAS! Saving model in ./data/weights/parser.weights"
                     saver.save(sess, './data/weights/parser.weights')
             print
 
@@ -240,8 +243,8 @@ def main(debug=True):
     print 80 * "="
     print "INITIALIZING"
     print 80 * "="
-    config = Config()
     parser, embeddings, train_examples, dev_set, test_set = load_and_preprocess_data(debug)
+    config = Config(parser.n_features, parser.n_trans)
     if not os.path.exists('./data/weights/'):
         os.makedirs('./data/weights/')
 
@@ -273,9 +276,10 @@ def main(debug=True):
                 print 80 * "="
                 print "Restoring the best model weights found on the dev set"
                 saver.restore(session, './data/weights/parser.weights')
-                print "Final evaluation on test set",
-                UAS, dependencies = parser.parse(test_set)
+                print "Final evaluation on test set"
+                UAS, LAS, dependencies = parser.parse(test_set)
                 print "- test UAS: {:.2f}".format(UAS * 100.0)
+                print "- test LAS: {:.2f}".format(LAS * 100.0)
                 print "Writing predictions"
                 with open('q2_test.predicted.pkl', 'w') as f:
                     cPickle.dump(dependencies, f, -1)
@@ -283,5 +287,3 @@ def main(debug=True):
 
 if __name__ == '__main__':
     main(debug=False)
-
-

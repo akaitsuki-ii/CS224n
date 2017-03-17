@@ -22,7 +22,7 @@ ROOT = '<ROOT>'
 class Config(object):
     language = 'english'
     with_punct = True
-    unlabeled = True
+    unlabeled = False
     lowercase = True
     use_pos = True
     use_dep = True
@@ -243,20 +243,26 @@ class Parser(object):
         model = ModelWrapper(self, dataset, sentence_id_to_idx)
         dependencies = minibatch_parse(sentences, model, eval_batch_size)
 
-        UAS = all_tokens = 0.0
+        UAS = LAS = all_tokens = 0.0
         for i, ex in enumerate(dataset):
             head = [-1] * len(ex['word'])
-            for h, t, in dependencies[i]:
+            deps = [''] * len(ex['label'])
+            for h, t, d in dependencies[i]:
                 head[t] = h
-            for pred_h, gold_h, gold_l, pos in \
-                    zip(head[1:], ex['head'][1:], ex['label'][1:], ex['pos'][1:]):
+                deps[t] = d
+            for pred_h, pred_l, gold_h, gold_l, pos in \
+                    zip(head[1:], deps[1:], ex['head'][1:], ex['label'][1:], ex['pos'][1:]):
+                    assert self.id2tok[gold_l].startswith(L_PREFIX)
+                    label_str = self.id2tok[gold_l][len(L_PREFIX):]
                     assert self.id2tok[pos].startswith(P_PREFIX)
                     pos_str = self.id2tok[pos][len(P_PREFIX):]
                     if (self.with_punct) or (not punct(self.language, pos_str)):
                         UAS += 1 if pred_h == gold_h else 0
+                        LAS += 1 if pred_h == gold_h and pred_l == label_str else 0
                         all_tokens += 1
         UAS /= all_tokens
-        return UAS, dependencies
+        LAS /= all_tokens
+        return UAS, LAS, dependencies
 
 
 class ModelWrapper(object):
@@ -273,7 +279,7 @@ class ModelWrapper(object):
         mb_l = [self.parser.legal_labels(p.stack, p.buffer) for p in partial_parses]
         pred = self.parser.model.predict_on_batch(self.parser.session, mb_x)
         pred = np.argmax(pred + 10000 * np.array(mb_l).astype('float32'), 1)
-        pred = ["S" if p == 2 else ("LA" if p == 0 else "RA") for p in pred]
+        pred = [self.parser.id2tran[p] for p in pred]
         return pred
 
 
@@ -329,10 +335,10 @@ def punct(language, pos):
         raise ValueError('language: %s is not supported.' % language)
 
 
-def minibatches(data, batch_size):
+def minibatches(data, batch_size, n_classes):
     x = np.array([d[0] for d in data])
     y = np.array([d[2] for d in data])
-    one_hot = np.zeros((y.size, 3))
+    one_hot = np.zeros((y.size, n_classes))
     one_hot[np.arange(y.size), y] = 1
     return get_minibatches([x, one_hot], batch_size)
 

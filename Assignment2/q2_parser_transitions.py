@@ -1,4 +1,4 @@
-from copy import copy, deepcopy
+from copy import copy
 
 
 class PartialParse(object):
@@ -40,14 +40,16 @@ class PartialParse(object):
         if transition == "S":
             self.stack.append(self.buffer[0])
             self.buffer = self.buffer[1:]
-        elif transition == "LA":
+        elif transition.startswith("L-"):
             left, right = self.stack[-2:]
-            self.dependencies.append((right, left))
+            self.dependencies.append((right, left, transition[2:]))
             self.stack.pop(-2)
-        elif transition == "RA":
+        elif transition.startswith("R-"):
             left, right = self.stack[-2:]
-            self.dependencies.append((left, right))
+            self.dependencies.append((left, right, transition[2:]))
             self.stack.pop(-1)
+        else:
+            raise ValueError("Invalid transition argument '%s'" % transition)
         ### END YOUR CODE
 
     def parse(self, transitions):
